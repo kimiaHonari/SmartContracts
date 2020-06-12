@@ -1,0 +1,194 @@
+pragma solidity >=0.5.0 <0.6.0;
+
+
+
+contract PowerContract{
+    
+    uint balances;
+    uint TotalPowerTransmited;
+    uint TotalPrice;
+    uint TotalPower;
+    uint PowerDelivered;
+    address payable generator;
+    address payable customer;
+    // KW 
+    uint256 powerValue;
+    // Ether
+    uint256 priceRate;
+    uint PowerRate;
+    
+    // month=30
+    uint Duration;
+    uint EndTime;
+
+    enum State { Created, Locked, Waited, Released, Inactive }
+    
+    State public state;
+    
+    
+    
+    
+    constructor(uint _Duration,uint256 _priceRate)public payable{
+         generator=msg.sender;
+         powerValue=100;
+         priceRate=_priceRate;
+         
+         TotalPowerTransmited=0;
+         PowerRate=3600;
+         Duration=_Duration; // or we can add 2629743 which represent one month
+         
+         PowerDelivered=0;
+         
+         TotalPrice=((Duration/PowerRate)*priceRate*powerValue);
+         TotalPower=((Duration/PowerRate)*powerValue );
+         
+         
+         balances=msg.value;
+         require(balances>=TotalPrice/2);
+         
+         
+         
+         
+         state=State.Created;
+         
+    }
+    
+
+    
+   modifier condition(bool _condition){
+       require(_condition);
+       _;
+   }
+    
+    modifier inState(State _state) {
+        require(
+            state == _state,
+            "Invalid state."
+        );
+        _;
+    }
+
+      modifier onlySeller{
+        require(msg.sender==generator);
+        _;
+    }
+    
+       modifier onlyCustomer{
+        require(msg.sender==customer);
+        _;
+    }
+    
+    modifier onlyBefore(uint _time) { require(now < _time); _; }
+    
+        function getPowerValue() public view returns(uint256){
+        return powerValue;
+    }
+    
+
+    
+    function getPriceRate() public view returns(uint256){
+        return priceRate;
+    }
+    
+    
+  
+    event PurchaseConfirmed();
+    event PowerTransmited(uint256 powerValue);
+    event TokenTransfered();
+    event WaitForPayment();
+    event PaymentReceived(uint value);
+    event EndOfContract();
+   
+
+
+    function cancel() public onlySeller
+    inState(State.Released){
+        state=State.Inactive;
+        
+        generator.transfer(address(this).balance);
+        
+        emit EndOfContract();
+    }
+
+    function confirmPurchase()
+        public
+        inState(State.Created)
+        condition((TotalPrice *2 )==msg.value)
+        payable
+    {
+
+             EndTime=now+Duration;
+             emit PurchaseConfirmed();
+        
+            
+             customer=msg.sender;
+             state = State.Locked;
+             emit PaymentReceived(TotalPrice);
+
+    }
+    
+    function Purchase()
+    public
+    inState(State.Released)
+    condition(msg.value==(TotalPrice*2))
+    payable
+    onlyBefore(EndTime)
+    onlyCustomer
+    {
+            
+            state = State.Locked;
+            emit PaymentReceived(TotalPrice);
+        
+        
+    }
+
+    function confirmDelivery(uint power)
+    public
+    inState(State.Locked) 
+    
+    onlySeller
+    {
+        PowerDelivered=power;
+            
+            emit PowerTransmited(power);
+            state=State.Waited;
+
+    }
+
+    function confirmReceived(uint power)
+        public
+        inState(State.Waited) 
+        onlyCustomer
+     
+    {
+        require(power==PowerDelivered);
+            
+        TotalPowerTransmited+=power;
+           
+        uint value=((Duration/PowerRate)*priceRate*powerValue);
+        uint money=TotalPrice*2;
+        
+        require(money>value);
+        
+        generator.transfer(value);
+        customer.transfer(money);
+        
+        emit TokenTransfered();
+           
+        state = State.Released;
+        emit WaitForPayment();
+
+   
+      
+        
+ 
+        
+    }
+    
+
+
+    
+
+
+    
+}
